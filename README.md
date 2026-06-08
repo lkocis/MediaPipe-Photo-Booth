@@ -1,35 +1,14 @@
-Here’s a GitHub-ready README section matching the style of your existing project README. You can use this as the README for your smile/emoji detection part, or merge it into the main README.
+# MediaPipe-Photo-Booth
 
-# Smile Detection and Emoji Burst Module
+In this app the goal is to use a webcam and MediaPipe library to be able to detect hand gestures and emotions. By using specific gestures, user is able to take a picture.
 
-This part of the Magic Emoji Booth project is responsible for detecting smiles from a webcam frame and generating animated emoji bursts when a smile is detected.
+Functionalities:
+1. Smile detection
+2. Emojis generating after detecting a smile
+3. Detecting hand gestures: thumbs-up and peace sign
+4. Taking a picture after detecting one of the hand gestures
+5. Generating QR code for downloading the picture
 
-The module is designed to work together with the main application. It does not open the camera by itself and does not contain its own main loop. Instead, it receives frames from the main program, processes them, draws emojis directly on the frame, and returns information about detected smiles.
-
-## Functionalities
-
-* Detecting faces from the webcam image
-* Detecting smiles inside detected faces
-* Supporting up to 3 people on the screen
-* Counting how many people are smiling
-* Generating more emojis when more people are smiling
-* Drawing animated emoji bursts on the video frame
-* Returning smile detection data to the main application
-
-## Technologies Used
-
-* Python
-* OpenCV
-* Pillow
-* NumPy
-* Haar cascade classifiers for face and smile detection
-
-## File Structure
-
-Recommended file name:
-
-```text
-smile_emoji.py
-```
-
-This file contains the `SmileEmojiDetector` class, which handles smile detection and emoji animation.
+For using Iphone as a webcam:
+1. Install DroidCam on Iphone
+2. Follow steps from this link: https://droidcam.app/windows/#step1 on your PC to be able to connect PC and Iphone
