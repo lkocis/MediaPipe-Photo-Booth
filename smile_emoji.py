@@ -3,17 +3,19 @@ import time
 import random
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+import os
 
 
 class SmileEmojiDetector:
     def __init__(self):
-        self.face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
-        self.smile_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_smile.xml"
-        )
+        module_dir = os.path.dirname(os.path.abspath(__file__))
 
+        face_path = os.path.join(module_dir, "haarcascade_frontalface_default.xml")
+        smile_path = os.path.join(module_dir, "haarcascade_smile.xml")
+
+        self.face_cascade = cv2.CascadeClassifier(face_path)
+        self.smile_cascade = cv2.CascadeClassifier(smile_path)
+        
         self.emoji_particles = []
         self.emojis = ["🎒", "😄", "🤖", "🥳", "✨", "🌈", "🎉"]
 

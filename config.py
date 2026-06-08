@@ -8,5 +8,4 @@ FONT_COLOR = (255, 255, 255)  # Bijela boja
 BG_TEXT_COLOR = (0, 0, 0)     # Crna pozadina za bolju čitljivost koda
 
 # Putanje do mapa
-EFFECTS_DIR = "effects"
 PHOTOS_DIR = "photos"

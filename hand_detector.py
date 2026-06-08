@@ -44,21 +44,22 @@ class HandDetector:
             d_pinky = dist(lm[20], lm[0])
             
             # Provjera jesu li prsti savijeni (vrh prsta blizu dlana)
-            # Ovo je robusno jer ne ovisi o orijentaciji ruke
             index_down = dist(lm[8], lm[0]) < dist(lm[6], lm[0])
             middle_down = dist(lm[12], lm[0]) < dist(lm[10], lm[0])
             ring_down = dist(lm[16], lm[0]) < dist(lm[14], lm[0])
             pinky_down = dist(lm[20], lm[0]) < dist(lm[18], lm[0])
+            thumb_down = dist(lm[4], lm[17]) < dist(lm[3], lm[17])
             
             # PEACE: Indeks i Srednji gore, ostali dolje
-            is_like = (d_thumb > 1.4 * d_index) and (d_thumb > 1.4 * d_middle) and \
-                      index_down and middle_down and ring_down and pinky_down
+            if (d_index > 1.4 * d_thumb) and (d_middle > 1.4 * d_thumb) and \
+               (d_index > 1.4 * d_ring) and (d_middle > 1.4 * d_ring) and \
+               ring_down and pinky_down and thumb_down:
+                return "peace"
             
-            # PEACE: Indeks i Srednji su najdalje, ostali savijeni
-            is_peace = (d_index > d_thumb and d_middle > d_thumb and d_index > d_ring and d_middle > d_ring) and \
-                       ring_down and pinky_down
-        
-            if is_peace: return "peace"
-            if is_like: return "like"
+            # LIKE: Palac gore, ostali dolje
+            if (d_thumb > 1.4 * d_index) and (d_thumb > 1.4 * d_middle) and \
+               (d_thumb > 1.4 * d_ring) and (d_thumb > 1.4 * d_pinky) and \
+               index_down and middle_down and ring_down and pinky_down:
+                return "like"
             
         return None
