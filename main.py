@@ -4,6 +4,7 @@ import config
 import camera as cam  
 from hand_detector import HandDetector
 from smile_emoji import SmileEmojiDetector
+from face_detection import detect_face  
 import time
 
 def main():
@@ -40,9 +41,12 @@ def main():
             print("Greška: Nije moguće učitati frame.")
             break
 
-        face = smile_detector.process(frame)
+        mp_face_response = detect_face(frame)
 
-        if face["smile"]: 
+        face_status = smile_detector.process_with_mediapipe(frame, mp_face_response)
+
+        # Provjera osmijeha preko novog sustava
+        if face_status["smile"]: 
             cv2.putText(frame, "OSMIJEH DETEKTIRAN!", (30, 120), cv2.FONT_HERSHEY_SIMPLEX, config.FONT_SCALE, (0, 255, 255), 2, cv2.LINE_AA)
         
         if not photo_window_open:
@@ -71,7 +75,7 @@ def main():
                 cv2.putText(popup_frame, "FOTOGRAFIJA SPREMLJENA!", (30, 50), 
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
                 
-                cv2.imshow("Uslikana fotografija", popup_frame)
+                cv2.imshow("[PHOTO BOOTH] Uslikana fotografija", popup_frame)
                 
                 close_photo_window_at = current_time + 3.0
                 photo_window_open = True
@@ -81,7 +85,7 @@ def main():
             text, color = "BLOCKED", (0, 0, 255)
 
         cv2.putText(frame, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-        cv2.imshow("Photo Booth", frame) 
+        cv2.imshow("[PHOTO BOOTH] Photo Booth", frame) 
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
