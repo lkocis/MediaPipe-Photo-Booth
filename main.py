@@ -16,6 +16,9 @@ def main():
     cap = cam.get_camera()
     cam.setup_camera(cap)
 
+    cv2.namedWindow("[PHOTO BOOTH] Photo Booth", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("[PHOTO BOOTH] Photo Booth", 1280, 720)
+
     smile_detector = SmileEmojiDetector()
     hand_detector = HandDetector()
     
@@ -45,7 +48,6 @@ def main():
 
         face_status = smile_detector.process_with_mediapipe(frame, mp_face_response)
 
-        # Provjera osmijeha preko novog sustava
         if face_status["smile"]: 
             cv2.putText(frame, "OSMIJEH DETEKTIRAN!", (30, 120), cv2.FONT_HERSHEY_SIMPLEX, config.FONT_SCALE, (0, 255, 255), 2, cv2.LINE_AA)
         
@@ -75,6 +77,8 @@ def main():
                 cv2.putText(popup_frame, "FOTOGRAFIJA SPREMLJENA!", (30, 50), 
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
                 
+                cv2.namedWindow("[PHOTO BOOTH] Uslikana fotografija", cv2.WINDOW_NORMAL)
+                cv2.resizeWindow("[PHOTO BOOTH] Uslikana fotografija", 1280, 720)
                 cv2.imshow("[PHOTO BOOTH] Uslikana fotografija", popup_frame)
                 
                 close_photo_window_at = current_time + 3.0
