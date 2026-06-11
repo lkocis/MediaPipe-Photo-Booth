@@ -48,7 +48,6 @@ HTML_PAGE = """
         #overlay { font-size: 24px; margin-top: 10px; z-index: 10; }
         video { border: 3px solid #444; max-width: 100%; z-index: 5; }
 
-        /* --- NOVO: Stil za prikaz uslikane fotke preko cijelog ekrana --- */
         #photo-preview {
             display: none; 
             position: absolute;
@@ -66,7 +65,6 @@ HTML_PAGE = """
             border-radius: 4px;
         }
 
-        /* --- NOVO: Stil za efekt bljeska (flash) --- */
         #flash-overlay {
             display: none; 
             position: absolute;
@@ -102,7 +100,6 @@ HTML_PAGE = """
         const ctx = canvas.getContext('2d');
         const overlay = document.getElementById('overlay');
         
-        // NOVO: Selektori za flash i preview elemente
         const flashOverlay = document.getElementById('flash-overlay');
         const photoPreview = document.getElementById('photo-preview');
         const previewImg = document.getElementById('preview-img');
@@ -119,7 +116,6 @@ HTML_PAGE = """
             });
 
         async function sendFrame() {
-            // Ako je preview trenutno prikazan, pauziraj slanje novih frameova
             if (photoPreview.style.display === 'flex') return;
 
             ctx.drawImage(video, 0, 0, 1280, 720);
@@ -136,7 +132,6 @@ HTML_PAGE = """
                 overlay.textContent = data.text + (data.smile ? ' 😊' : '');
                 overlay.style.color = `rgb(${data.color[2]}, ${data.color[1]}, ${data.color[0]})`;
                 
-                // NOVO: Ako je slika uspješno spremljena i vraćena s backenda
                 if (data.saved && data.captured_image) {
                     overlay.textContent = '📸 FOTOGRAFIJA SPREMLJENA!';
 
@@ -212,7 +207,6 @@ def process_frame():
             cv2.imwrite(filepath, frame)
             print(f"[PHOTO BOOTH] Slika spremljena: {filepath}")
             
-            # --- NOVO: Enkodiranje tog istog okvira u Base64 kako bismo ga poslali nazad u JS ---
             _, buffer = cv2.imencode('.jpg', frame)
             captured_image_base64 = base64.b64encode(buffer).decode('utf-8')
             
@@ -227,7 +221,7 @@ def process_frame():
         "color": color,
         "smile": smile,
         "saved": saved,
-        "captured_image": captured_image_base64  # NOVO: Šalje se slika ili None
+        "captured_image": captured_image_base64  
     })
 
 if __name__ == "__main__":
