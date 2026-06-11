@@ -11,7 +11,14 @@ class SmileEmojiDetector:
         self.emoji_particles = []
         self.emojis = ["🎒", "😄", "🤖", "🥳", "✨", "🌈", "🎉"]
 
-        self.font_path = "C:/Windows/Fonts/seguiemj.ttf"
+        # Cross-platform font path: Windows, Linux (Docker), macOS
+        import platform
+        if platform.system() == "Windows":
+            self.font_path = "C:/Windows/Fonts/seguiemj.ttf"
+        elif platform.system() == "Darwin":  # macOS
+            self.font_path = "/System/Library/Fonts/Apple Color Emoji.ttc"
+        else:  # Linux / Docker
+            self.font_path = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
         self.font_cache = {}
 
         self.last_burst_time = 0
