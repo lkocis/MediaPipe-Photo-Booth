@@ -1,19 +1,11 @@
 version: "3.9"
-
 services:
-  photo-booth:
+  photobooth:
     build: .
-    image: photo-booth
-    container_name: photo-booth
-
-    environment:
-      - DISPLAY=${DISPLAY:-host.docker.internal:0}
-
+    ports:
+      - "5000:5000"
     volumes:
       - ./photos:/app/photos
-
     devices:
-      - /dev/video0:/dev/video0
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - /dev/video0:/dev/video0    # kamera
+    restart: unless-stopped
