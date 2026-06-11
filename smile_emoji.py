@@ -11,11 +11,10 @@ class SmileEmojiDetector:
         self.emoji_particles = []
         self.emojis = ["🎒", "😄", "🤖", "🥳", "✨", "🌈", "🎉"]
 
-        # Cross-platform font path: Windows, Linux (Docker), macOS
         import platform
         if platform.system() == "Windows":
             self.font_path = "C:/Windows/Fonts/seguiemj.ttf"
-        elif platform.system() == "Darwin":  # macOS
+        elif platform.system() == "Darwin":
             self.font_path = "/System/Library/Fonts/Apple Color Emoji.ttc"
         else:  # Linux / Docker
             self.font_path = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
@@ -30,14 +29,12 @@ class SmileEmojiDetector:
         self.previous_stable_smiling_people = 0
 
     def get_emoji_font(self):
-        if "emoji" not in self.font_cache:
+        if "emoji_base_font" not in self.font_cache:
             last_error = None
 
-            # NotoColorEmoji on Linux usually works at 109 px, not arbitrary sizes.
-            # Other values are fallbacks for Windows/macOS fonts.
             for font_size in (109, 128, 160, 96, 72, 64):
                 try:
-                    self.font_cache["emoji"] = ImageFont.truetype(self.font_path, font_size)
+                    self.font_cache["emoji_base_font"] = ImageFont.truetype(self.font_path, font_size)
                     self.emoji_font_size = font_size
                     break
                 except OSError as e:
@@ -45,7 +42,55 @@ class SmileEmojiDetector:
             else:
                 raise last_error
 
-        return self.font_cache["emoji"]
+        return self.font_cache["emoji_base_font"]
+
+    def get_rendered_emoji(self, emoji, size):
+        key = (emoji, size)
+        if key in self.font_cache:
+            return self.font_cache[key]
+
+        font = self.get_emoji_font()
+        canvas_size = self.emoji_font_size + 80
+        emoji_layer = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+        emoji_draw = ImageDraw.Draw(emoji_layer)
+
+        emoji_draw.text(
+            (40, 40),
+            emoji,
+            font=font,
+            embedded_color=True
+        )
+
+        bbox = emoji_layer.getbbox()
+        if bbox is None:
+            return None
+
+        emoji_img = emoji_layer.crop(bbox)
+        resample_filter = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+        emoji_img.thumbnail((size, size), resample_filter)
+
+        self.font_cache[key] = emoji_img
+        return emoji_img
+
+    def paste_rgba_clipped(self, base, overlay, x, y):
+        if overlay is None:
+            return
+
+        if x >= base.width or y >= base.height:
+            return
+        if x + overlay.width <= 0 or y + overlay.height <= 0:
+            return
+
+        src_left = max(0, -x)
+        src_top = max(0, -y)
+        src_right = min(overlay.width, base.width - x)
+        src_bottom = min(overlay.height, base.height - y)
+
+        cropped = overlay.crop((src_left, src_top, src_right, src_bottom))
+        dst_x = max(0, x)
+        dst_y = max(0, y)
+
+        base.alpha_composite(cropped, (dst_x, dst_y))
 
     def get_emoji_amount(self, smiling_people):
         if smiling_people == 1:
@@ -75,13 +120,11 @@ class SmileEmojiDetector:
             })
 
     def draw_emojis(self, frame, dt):
-        #optiiziacija: ako nema emojija za crtanje, ne radimo nepotrebne konverzije slika
         if not self.emoji_particles:
             return
         
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_image = Image.fromarray(frame_rgb).convert("RGBA")
-        draw = ImageDraw.Draw(pil_image)
 
         remaining_particles = []
 
@@ -99,71 +142,18 @@ class SmileEmojiDetector:
                     emoji_img,
                     int(particle["x"]),
                     int(particle["y"])
-)
+                )
 
                 remaining_particles.append(particle)
 
         self.emoji_particles = remaining_particles
         frame[:, :] = cv2.cvtColor(np.array(pil_image.convert("RGB")), cv2.COLOR_RGB2BGR)
 
-    def get_rendered_emoji(self, emoji, size):
-        key = (emoji, size)
-        if key in self.font_cache:
-            return self.font_cache[key]
-
-        font = self.get_emoji_font()
-        canvas_size = self.emoji_font_size + 80
-
-        emoji_layer = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
-        emoji_draw = ImageDraw.Draw(emoji_layer)
-
-        emoji_draw.text(
-            (40, 40),
-            emoji,
-            font=font,
-            embedded_color=True
-        )
-
-        bbox = emoji_layer.getbbox()
-        if bbox is None:
-            return None
-
-        emoji_img = emoji_layer.crop(bbox)
-
-        resample_filter = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
-        emoji_img.thumbnail((size, size), resample_filter)
-
-        self.font_cache[key] = emoji_img
-        return emoji_img
-
-
-    def paste_rgba_clipped(self, base, overlay, x, y):
-        if overlay is None:
-            return
-
-        if x >= base.width or y >= base.height:
-            return
-        if x + overlay.width <= 0 or y + overlay.height <= 0:
-            return
-
-        src_left = max(0, -x)
-        src_top = max(0, -y)
-        src_right = min(overlay.width, base.width - x)
-        src_bottom = min(overlay.height, base.height - y)
-
-        cropped = overlay.crop((src_left, src_top, src_right, src_bottom))
-        dst_x = max(0, x)
-        dst_y = max(0, y)
-
-        base.alpha_composite(cropped, (dst_x, dst_y))
-
     #ovdje dodajemo logiku za detekciju osmijeha koristeći MediaPipe, a ne Haar Cascade
     def process_with_mediapipe(self, frame, mp_response):
         current_time = time.time()
         dt = current_time - self.last_frame_time
         self.last_frame_time = current_time
-
-        #ne treba nam više faces jer to vučemo sada iz MediaPipe rezultata
         
         smiling_people = 0
         smiling_centers = []
@@ -173,8 +163,6 @@ class SmileEmojiDetector:
 
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-            #logiku za brojanje osmijeha i centara osmijeha vučemo iz MediaPipe rezultata
-            #ostavljamo samo računanje centra lica zbog emojia
             if face["smile"]:
                 smiling_people += 1
                 center_x = x + w // 2
