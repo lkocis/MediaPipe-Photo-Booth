@@ -29,10 +29,23 @@ class SmileEmojiDetector:
         self.history_size = 6
         self.previous_stable_smiling_people = 0
 
-    def get_emoji_font(self, size):
-        if size not in self.font_cache:
-            self.font_cache[size] = ImageFont.truetype(self.font_path, size)
-        return self.font_cache[size]
+    def get_emoji_font(self):
+        if "emoji" not in self.font_cache:
+            last_error = None
+
+            # NotoColorEmoji on Linux usually works at 109 px, not arbitrary sizes.
+            # Other values are fallbacks for Windows/macOS fonts.
+            for font_size in (109, 128, 160, 96, 72, 64):
+                try:
+                    self.font_cache["emoji"] = ImageFont.truetype(self.font_path, font_size)
+                    self.emoji_font_size = font_size
+                    break
+                except OSError as e:
+                    last_error = e
+            else:
+                raise last_error
+
+        return self.font_cache["emoji"]
 
     def get_emoji_amount(self, smiling_people):
         if smiling_people == 1:
@@ -54,10 +67,10 @@ class SmileEmojiDetector:
                 "emoji": random.choice(self.emojis),
                 "x": float(start_x),
                 "y": float(start_y),
-                "vx": random.uniform(-250, 250),
-                "vy": random.uniform(-450, -150),
+                "vx": random.uniform(-160, 160),
+                "vy": random.uniform(-320, -90),
                 "size": random.randint(28, 48),
-                "life": random.uniform(1.0, 1.8),
+                "life": random.uniform(2.4, 3.4),
                 "age": 0.0
             })
 
@@ -67,7 +80,7 @@ class SmileEmojiDetector:
             return
         
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(frame_rgb)
+        pil_image = Image.fromarray(frame_rgb).convert("RGBA")
         draw = ImageDraw.Draw(pil_image)
 
         remaining_particles = []
@@ -78,21 +91,71 @@ class SmileEmojiDetector:
             if particle["age"] < particle["life"]:
                 particle["x"] += particle["vx"] * dt
                 particle["y"] += particle["vy"] * dt
-                particle["vy"] += 600 * dt
+                particle["vy"] += 420 * dt
 
-                font = self.get_emoji_font(particle["size"])
-
-                draw.text(
-                    (particle["x"], particle["y"]),
-                    particle["emoji"],
-                    font=font,
-                    embedded_color=True
-                )
+                emoji_img = self.get_rendered_emoji(particle["emoji"], particle["size"])
+                self.paste_rgba_clipped(
+                    pil_image,
+                    emoji_img,
+                    int(particle["x"]),
+                    int(particle["y"])
+)
 
                 remaining_particles.append(particle)
 
         self.emoji_particles = remaining_particles
-        frame[:, :] = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+        frame[:, :] = cv2.cvtColor(np.array(pil_image.convert("RGB")), cv2.COLOR_RGB2BGR)
+
+    def get_rendered_emoji(self, emoji, size):
+        key = (emoji, size)
+        if key in self.font_cache:
+            return self.font_cache[key]
+
+        font = self.get_emoji_font()
+        canvas_size = self.emoji_font_size + 80
+
+        emoji_layer = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+        emoji_draw = ImageDraw.Draw(emoji_layer)
+
+        emoji_draw.text(
+            (40, 40),
+            emoji,
+            font=font,
+            embedded_color=True
+        )
+
+        bbox = emoji_layer.getbbox()
+        if bbox is None:
+            return None
+
+        emoji_img = emoji_layer.crop(bbox)
+
+        resample_filter = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+        emoji_img.thumbnail((size, size), resample_filter)
+
+        self.font_cache[key] = emoji_img
+        return emoji_img
+
+
+    def paste_rgba_clipped(self, base, overlay, x, y):
+        if overlay is None:
+            return
+
+        if x >= base.width or y >= base.height:
+            return
+        if x + overlay.width <= 0 or y + overlay.height <= 0:
+            return
+
+        src_left = max(0, -x)
+        src_top = max(0, -y)
+        src_right = min(overlay.width, base.width - x)
+        src_bottom = min(overlay.height, base.height - y)
+
+        cropped = overlay.crop((src_left, src_top, src_right, src_bottom))
+        dst_x = max(0, x)
+        dst_y = max(0, y)
+
+        base.alpha_composite(cropped, (dst_x, dst_y))
 
     #ovdje dodajemo logiku za detekciju osmijeha koristeći MediaPipe, a ne Haar Cascade
     def process_with_mediapipe(self, frame, mp_response):

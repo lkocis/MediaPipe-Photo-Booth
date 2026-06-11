@@ -135,7 +135,7 @@ def process_frame():
             photo_blocked = True
             saved = True
     else:
-        text, color = "BLOCKED", [0, 0, 255]
+        text, color = "📸 FOTOGRAFIJA SPREMLJENA!", [0, 255, 255]
 
     return jsonify({
         "text": text,
