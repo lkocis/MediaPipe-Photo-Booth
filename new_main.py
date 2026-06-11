@@ -31,12 +31,59 @@ HTML_PAGE = """
 <head>
     <title>Photo Booth</title>
     <style>
-        body { background: #111; display: flex; flex-direction: column;
-               justify-content: center; align-items: center; 
-               height: 100vh; margin: 0; color: white; font-family: Arial; }
+        body { 
+            background: #111; 
+            display: flex; 
+            flex-direction: column;
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            color: white; 
+            font-family: Arial; 
+            position: relative; 
+            overflow: hidden;
+        }
         #canvas { display: none; }
-        #overlay { font-size: 24px; margin-top: 10px; }
-        video { border: 3px solid #444; max-width: 100%; }
+        #overlay { font-size: 24px; margin-top: 10px; z-index: 10; }
+        video { border: 3px solid #444; max-width: 100%; z-index: 5; }
+
+        /* --- NOVO: Stil za prikaz uslikane fotke preko cijelog ekrana --- */
+        #photo-preview {
+            display: none; 
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.95); 
+            z-index: 100; 
+            justify-content: center;
+            align-items: center;
+        }
+        #photo-preview img {
+            max-width: 85%;
+            max-height: 85%;
+            border: 6px solid white;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.4);
+            border-radius: 4px;
+        }
+
+        /* --- NOVO: Stil za efekt bljeska (flash) --- */
+        #flash-overlay {
+            display: none; 
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: white;
+            z-index: 150; 
+            opacity: 0;
+        }
+        
+        .do-flash {
+            animation: flashAnim 0.3s ease-out;
+        }
+        
+        @keyframes flashAnim {
+            0% { opacity: 1; display: block; }
+            100% { opacity: 0; display: none; }
+        }
     </style>
 </head>
 <body>
@@ -44,11 +91,21 @@ HTML_PAGE = """
     <canvas id="canvas" width="1280" height="720"></canvas>
     <div id="overlay">Učitavanje kamere...</div>
 
+    <div id="flash-overlay"></div>
+    <div id="photo-preview">
+        <img id="preview-img" src="" alt="Uslikana fotografija">
+    </div>
+
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const overlay = document.getElementById('overlay');
+        
+        // NOVO: Selektori za flash i preview elemente
+        const flashOverlay = document.getElementById('flash-overlay');
+        const photoPreview = document.getElementById('photo-preview');
+        const previewImg = document.getElementById('preview-img');
 
         // Pokreni kameru
         navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
@@ -62,6 +119,9 @@ HTML_PAGE = """
             });
 
         async function sendFrame() {
+            // Ako je preview trenutno prikazan, pauziraj slanje novih frameova
+            if (photoPreview.style.display === 'flex') return;
+
             ctx.drawImage(video, 0, 0, 1280, 720);
             const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
@@ -72,11 +132,28 @@ HTML_PAGE = """
                     body: JSON.stringify({ frame: base64 })
                 });
                 const data = await res.json();
+                
                 overlay.textContent = data.text + (data.smile ? ' 😊' : '');
                 overlay.style.color = `rgb(${data.color[2]}, ${data.color[1]}, ${data.color[0]})`;
                 
-                if (data.saved) {
+                // NOVO: Ako je slika uspješno spremljena i vraćena s backenda
+                if (data.saved && data.captured_image) {
                     overlay.textContent = '📸 FOTOGRAFIJA SPREMLJENA!';
+
+                    // 1. Okini bijeli bljesak na ekranu
+                    flashOverlay.classList.add('do-flash');
+                    setTimeout(() => flashOverlay.classList.remove('do-flash'), 300);
+
+                    // 2. Ubaci bazu64 slike u <img> i prikaži overlay preko cijelog ekrana
+                    previewImg.src = 'data:image/jpeg;base64,' + data.captured_image;
+                    photoPreview.style.display = 'flex';
+
+                    // 3. Makni prikaz uslikane slike nakon 2.5 sekunde
+                    setTimeout(() => {
+                        photoPreview.style.display = 'none';
+                        overlay.textContent = 'Status: OK';
+                        overlay.style.color = 'rgb(0, 255, 0)';
+                    }, 2500);
                 }
             } catch(e) {
                 console.error(e);
@@ -109,12 +186,13 @@ def process_frame():
     if photo_blocked and current_time >= close_photo_at:
         photo_blocked = False
 
-    # Detekcija lica
+    # Detekcija lica i osmijeha
     mp_face_response = detect_face(frame)
     face_status = smile_emoji_detector.process_with_mediapipe(frame, mp_face_response)
     smile = face_status["smile"]
 
     saved = False
+    captured_image_base64 = None  # Varijabla u koju spremamo sliku za slanje klijentu
 
     if not photo_blocked:
         gesture = hand_detector.detect_gesture(frame)
@@ -129,8 +207,15 @@ def process_frame():
         if gesture in ("peace", "like"):
             filename = f"photo_{int(time.time())}.jpg"
             filepath = os.path.join(photos_dir, filename)
+            
+            # Spremanje datoteke na disk lokalno
             cv2.imwrite(filepath, frame)
             print(f"[PHOTO BOOTH] Slika spremljena: {filepath}")
+            
+            # --- NOVO: Enkodiranje tog istog okvira u Base64 kako bismo ga poslali nazad u JS ---
+            _, buffer = cv2.imencode('.jpg', frame)
+            captured_image_base64 = base64.b64encode(buffer).decode('utf-8')
+            
             close_photo_at = current_time + 3.0
             photo_blocked = True
             saved = True
@@ -141,7 +226,8 @@ def process_frame():
         "text": text,
         "color": color,
         "smile": smile,
-        "saved": saved
+        "saved": saved,
+        "captured_image": captured_image_base64  # NOVO: Šalje se slika ili None
     })
 
 if __name__ == "__main__":
