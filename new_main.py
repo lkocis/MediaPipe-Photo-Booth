@@ -8,9 +8,11 @@ import time
 from flask import Flask, Response, render_template_string, request, jsonify
 import threading
 import base64
+from smile_emoji import SmileEmojiDetector
 
 app = Flask(__name__)
 hand_detector = HandDetector()
+smile_emoji_detector = SmileEmojiDetector()
 
 output_frame = None
 frame_lock = threading.Lock()
@@ -109,7 +111,8 @@ def process_frame():
 
     # Detekcija lica
     mp_face_response = detect_face(frame)
-    smile = mp_face_response.get("smile", False)
+    face_status = smile_emoji_detector.process_with_mediapipe(frame, mp_face_response)
+    smile = face_status["smile"]
 
     saved = False
 

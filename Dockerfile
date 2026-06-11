@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     libegl1 \
     libglvnd0 \
     libglvnd-dev \
+    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -18,4 +19,4 @@ COPY . .
 
 EXPOSE 5000
 
-CMD ["python", "main.py"]
+CMD ["python", "new_main.py"]
