@@ -1,17 +1,27 @@
 import os
 import cv2
 import config
-import camera as cam
+import numpy as np
 from hand_detector import HandDetector
 from face_detection import detect_face
 import time
-from flask import Flask, Response, render_template_string
+from flask import Flask, Response, render_template_string, request, jsonify
 import threading
+import base64
 
 app = Flask(__name__)
+hand_detector = HandDetector()
 
 output_frame = None
 frame_lock = threading.Lock()
+last_result = {"text": "Status: OK", "color": [0, 255, 0], "smile": False}
+
+photos_dir = config.PHOTOS_DIR
+if not os.path.exists(photos_dir):
+    os.makedirs(photos_dir)
+
+close_photo_at = 0
+photo_blocked = False
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -19,13 +29,58 @@ HTML_PAGE = """
 <head>
     <title>Photo Booth</title>
     <style>
-        body { background: #111; display: flex; justify-content: center; 
-               align-items: center; height: 100vh; margin: 0; }
-        img { max-width: 100%; border: 3px solid #444; }
+        body { background: #111; display: flex; flex-direction: column;
+               justify-content: center; align-items: center; 
+               height: 100vh; margin: 0; color: white; font-family: Arial; }
+        #canvas { display: none; }
+        #overlay { font-size: 24px; margin-top: 10px; }
+        video { border: 3px solid #444; max-width: 100%; }
     </style>
 </head>
 <body>
-    <img src="/video_feed">
+    <video id="video" width="1280" height="720" autoplay playsinline></video>
+    <canvas id="canvas" width="1280" height="720"></canvas>
+    <div id="overlay">Učitavanje kamere...</div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+
+        // Pokreni kameru
+        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
+            .then(stream => {
+                video.srcObject = stream;
+                video.play();
+                setInterval(sendFrame, 100); // šalji frame svakih 100ms
+            })
+            .catch(err => {
+                overlay.textContent = 'Greška kamere: ' + err.message;
+            });
+
+        async function sendFrame() {
+            ctx.drawImage(video, 0, 0, 1280, 720);
+            const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+            try {
+                const res = await fetch('/process_frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ frame: base64 })
+                });
+                const data = await res.json();
+                overlay.textContent = data.text + (data.smile ? ' 😊' : '');
+                overlay.style.color = `rgb(${data.color[2]}, ${data.color[1]}, ${data.color[0]})`;
+                
+                if (data.saved) {
+                    overlay.textContent = '📸 FOTOGRAFIJA SPREMLJENA!';
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+    </script>
 </body>
 </html>
 """
@@ -34,101 +89,59 @@ HTML_PAGE = """
 def index():
     return render_template_string(HTML_PAGE)
 
-def generate_frames():
-    global output_frame
-    while True:
-        with frame_lock:
-            if output_frame is None:
-                continue
-            _, buffer = cv2.imencode(".jpg", output_frame)
-            frame_bytes = buffer.tobytes()
-        yield (b"--frame\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+@app.route("/process_frame", methods=["POST"])
+def process_frame():
+    global close_photo_at, photo_blocked
 
-@app.route("/video_feed")
-def video_feed():
-    return Response(generate_frames(),
-                    mimetype="multipart/x-mixed-replace; boundary=frame")
+    data = request.get_json()
+    img_data = base64.b64decode(data["frame"])
+    np_arr = np.frombuffer(img_data, np.uint8)
+    frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-def run_flask():
-    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    if frame is None:
+        return jsonify({"text": "Greška frame-a", "color": [0, 0, 255], "smile": False, "saved": False})
 
-def main():
-    global output_frame
-    print("Pokretanje Photo Booth-a...")
+    current_time = time.time()
 
-    if not os.path.exists(config.PHOTOS_DIR):
-        os.makedirs(config.PHOTOS_DIR)
+    # Odblokiraj nakon 3 sekunde
+    if photo_blocked and current_time >= close_photo_at:
+        photo_blocked = False
 
-    # Pokreni Flask u pozadinskom threadu
-    t = threading.Thread(target=run_flask, daemon=True)
-    t.start()
-    print("Web stream dostupan na: http://localhost:5000")
+    # Detekcija lica
+    mp_face_response = detect_face(frame)
+    smile = mp_face_response.get("smile", False)
 
-    cap = cam.get_camera()
-    cam.setup_camera(cap)
+    saved = False
 
-    hand_detector = HandDetector()
+    if not photo_blocked:
+        gesture = hand_detector.detect_gesture(frame)
 
-    close_photo_window_at = 0
-    photo_window_open = False
-    last_photo_path = None
-
-    while True:
-        current_time = time.time()
-
-        if photo_window_open and current_time >= close_photo_window_at:
-            photo_window_open = False
-            if last_photo_path and os.path.exists(last_photo_path):
-                os.remove(last_photo_path)
-                last_photo_path = None
-                print("[PHOTO BOOTH] Slika obrisana. Ponovno omogućeno slikanje!")
-            else:
-                print("[PHOTO BOOTH] Prozor zatvoren. Ponovno omogućeno slikanje!")
-
-        frame = cam.get_frame(cap)
-        if frame is None:
-            print("Greška: Nije moguće učitati frame.")
-            break
-
-        mp_face_response = detect_face(frame)
-
-        if mp_face_response["smile"]:
-            cv2.putText(frame, "OSMIJEH DETEKTIRAN!", (30, 120),
-                        cv2.FONT_HERSHEY_SIMPLEX, config.FONT_SCALE, (0, 255, 255), 2)
-
-        if not photo_window_open:
-            cv2.putText(frame, "Digni Peace ili Like za slikanje!", (30, 80),
-                        cv2.FONT_HERSHEY_SIMPLEX, config.FONT_SCALE, config.FONT_COLOR, 2)
-
-            gesture = hand_detector.detect_gesture(frame)
-
-            if gesture == "peace":
-                text, color = "PEACE!", (0, 0, 255)
-            elif gesture == "like":
-                text, color = "LIKE!", (255, 0, 0)
-            else:
-                text, color = "Status: OK", (0, 255, 0)
-
-            if gesture in ("peace", "like"):
-                filename = f"photo_{int(time.time())}.jpg"
-                filepath = os.path.join(config.PHOTOS_DIR, filename)
-                cv2.imwrite(filepath, frame)
-                last_photo_path = filepath
-                print(f"[PHOTO BOOTH] Slika spremljena: {filepath}")
-                close_photo_window_at = current_time + 3.0
-                photo_window_open = True
+        if gesture == "peace":
+            text, color = "PEACE!", [0, 0, 255]
+        elif gesture == "like":
+            text, color = "LIKE!", [255, 0, 0]
         else:
-            text, color = "BLOCKED", (0, 0, 255)
-            cv2.putText(frame, "Slikanje blokirano...", (30, 80),
-                        cv2.FONT_HERSHEY_SIMPLEX, config.FONT_SCALE, (0, 0, 255), 2)
+            text, color = "Status: OK", [0, 255, 0]
 
-        cv2.putText(frame, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+        if gesture in ("peace", "like"):
+            filename = f"photo_{int(time.time())}.jpg"
+            filepath = os.path.join(photos_dir, filename)
+            cv2.imwrite(filepath, frame)
+            print(f"[PHOTO BOOTH] Slika spremljena: {filepath}")
+            close_photo_at = current_time + 3.0
+            photo_blocked = True
+            saved = True
+    else:
+        text, color = "BLOCKED", [0, 0, 255]
 
-        with frame_lock:
-            output_frame = frame.copy()
-
-    cap.release()
+    return jsonify({
+        "text": text,
+        "color": color,
+        "smile": smile,
+        "saved": saved
+    })
 
 if __name__ == "__main__":
-    main()
+    print("Pokretanje Photo Booth-a...")
+    print("Otvori browser na: http://localhost:5000")
+    app.run(host="0.0.0.0", port=5000, debug=False)
