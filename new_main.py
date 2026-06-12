@@ -197,7 +197,7 @@ def process_frame():
         elif gesture == "like":
             text, color = "LIKE!", [255, 0, 0]
         else:
-            text, color = "Status: OK", [0, 255, 0]
+            text, color = "NASMIJEŠI SE I POKAŽI 👍 OR ✌️ -> ", [0, 255, 0]
 
         if gesture in ("peace", "like"):
             filename = f"photo_{int(time.time())}.jpg"
